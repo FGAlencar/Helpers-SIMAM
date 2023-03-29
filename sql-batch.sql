@@ -1,3 +1,23 @@
+-- select
+--     --distinct
+-- --        filtro.nrCredito,
+-- --        filtro.nrAnoCredito,
+-- --        filtro.idTipoDeducaoCredito,
+-- --        filtro.dtDeducao,
+-- --        filtro.cdControleLeiAto,
+-- --        filtro.dsMotivo,
+-- --        filtro.valor,
+-- --        filtro.entidade,
+-- --        filtro.exercicio,
+-- --        filtro.idCancelamento,
+-- --        filtro.idpagamentobloqueto,
+-- --        filtro.iddebitoreceita,
+-- --        filtro.iddebitoparcelareceita,
+-- --        filtro.idcreditocontribuinteitem
+-- -- coalesce(sum( distinct filtro.valor),0) as valor
+-- from
+-- (
+--    /*Cancelamento*/
 select
 coalesce(sum( distinct filtro.valor),0) as valor
 from
@@ -28,11 +48,23 @@ from
    left join tcedebitolanccredito       tdlc on tdlc.iddebitoparcelareceita = tcdi.iddebitoparcelareceita
    left join tcelanccredito             tlc  on tlc.idtcelanccredito = tdlc.idtcelanccredito
    left join cgato                      ca   on ca.entidade = md.entidade and ca.idato = md.idato
-     where (cd.datacancelamento between :dataInicial and :dataFinal) and cd.entidade = :entidade
-     and td.tipotce in (1,2,3,4,5,6)
+     where (cd.datacancelamento between :dataInicial and :dataFinal)
+     and cd.entidade = :entidade
+     and cd.tipodeducao <> 0
+--      and td.tipotce in (1,2,3,4,5,6)
      and tcdi.situacaolegal = 0
      and tcrt.classificacaoreceitatipo IN (1, 2, 3, 4, 5, 7)
+     and coalesce(tcdi.valorAtualizado, tcdi.valor) > 0
+--      and not exists (
+--          select 1
+--          from tceDeducaoCancelamento tdc
+--          where tdc.entidade = tcdi.entidade
+--            and tdc.exercicio = tcdi.exercicio
+--            and tdc.idcancelamento = tcdi.idcancelamento
+--            and tdc.iddebitoparcelareceita = tcdi.iddebitoparcelareceita
+--        )
    union all
+   /*pagamento*/
    select distinct
           ttd.tipotce as idTipoDeducaoCredito,
           tp.datalancamento as dtDeducao,
@@ -64,14 +96,21 @@ from
    left join tcedebitolanccredito       tdlc on tdlc.iddebitoparcelareceita = tdpr.iddebitoparcelareceita
    left join tcelanccredito             tlc  on tlc.idtcelanccredito = tdlc.idtcelanccredito
    left join cgato                      ca   on ca.entidade = tmd.entidade and ca.idato = tmd.idato
-   where tp.datalancamento between :dataInicial and :dataFinal and tp.entidade = :entidade
-   and tpd.valordesconto > 0
-   and tdp.situacaolegal = 0
-   and ttd.tipotce in (1,2,3,4,5,6)
-   and tcrt.classificacaoreceitatipo IN (1, 2, 3, 4, 5, 7)
-
+   left join contabancaria              cb   on cb.entidade = tp.entidade and cb.contabancaria = tp.contabancaria
+   where tp.datalancamento between :dataInicial and :dataFinal
+     and tp.entidade = :entidade
+     and tpd.valordesconto > 0
+     and tdp.situacaolegal = 0
+--      and ttd.tipotce in (1,2,3,4,5,6)
+     and tcrt.classificacaoreceitatipo IN (1, 2, 3, 4, 5, 7)
+--    and not exists (
+--          select 1
+--          from tceDeducaoPagamento tdp
+--          where tdp.iddebitoparcelareceita = tpd.iddebitoparcelareceita
+--            and tdp.idPagamentoBloqueto = tpd.idPagamentoBloqueto
+--        )
    union all
-
+   /*isencao*/
    select distinct
           ttd.tipotce as idTipoDeducaoCredito,
           coalesce(td.datacontabilizacao, td.datainclusao) as dtDeducao,
@@ -109,12 +148,32 @@ from
            (td.DataContabilizacao between :dataInicial and :dataFinal))
    and td.entidade = :entidade
    and tdri.valorisencao > 0
-   and ttd.tipotce in (1,2,3,4,5,6)
+--    and ttd.tipotce in (1,2,3,4,5,6)
    and tcrt.classificacaoreceitatipo in (1,2,3,4,5,7)
    and td.constituido = 'S'
-
+--    and not exists (
+--          select 1
+--          from tceDeducaoIsencao tdi
+--          where tdi.iddebitoreceita = tdr.iddebitoreceita
+--        )
+   and not exists(
+        select 1
+        from TRIBDEBITORECEITAISENCAO x
+            left outer join tribisencao ti on ti.isencao = x.isencao
+        where tdri.entidade = x.entidade
+            and tdri.EXERCICIO = x.exercicio
+            and tdri.TIPOCADASTRO = x.tipocadastro
+            and tdri.CADASTROGERAL = x.cadastrogeral
+            and tdri.GUIARECOLHIMENTO = x.guiarecolhimento
+            and tdri.SUBDIVIDA = x.subdivida
+            and tdri.receita = x.receita
+            and tdri.ISENCAO = x.ISENCAO
+            and coalesce(ti.CONTABILIZA,  'N') = ' N'
+            and coalesce(ti.CONTABILIZATAXA, ' N') = ' N'
+            and coalesce(ti.CONTABILIZACONTRIBUICAO, ' N') = ' N'
+         )
    union all
-
+   /*Credito*/
    select distinct
           ttd.tipotce as idTipoDeducaoCredito,
           tcc.datacredito as dtDeducao,
@@ -147,9 +206,18 @@ from
    left join tcedebitolanccredito         tdlc  on tdlc.iddebitoparcelareceita = tdpr.iddebitoparcelareceita
    left join tcelanccredito               tlc   on tlc.idtcelanccredito = tdlc.idtcelanccredito
    left join cgato                        ca    on ca.entidade = tcci.entidade and ca.idato = tmd.idato
-     WHERE tcc.entidade = :entidade AND tcc.datacredito BETWEEN :dataInicial and :dataFinal
-     and tcci.valordesconto > 0
-     and tdp.situacaolegal = 0
-     and ttd.tipotce in (1,2,3,4,5,6)
-     and tcrt.classificacaoreceitatipo in (1,2,3,4,5,7)
+     WHERE tcc.entidade = :entidade
+       and tcc.datacredito BETWEEN :dataInicial and :dataFinal
+       and tcci.valordesconto > 0
+       and tdp.situacaolegal = 0
+       and ttd.tipotce in (1,2,3,4,5,6)
+       and tcrt.classificacaoreceitatipo in (1,2,3,4,5,7)
+--      and not exists (
+--          select 1
+--          from tceDeducaoCreditoCredito tdcc
+--          where tdcc.idCreditoContribuinteItem = tcci.idcreditocontribuinteitem
+--            and tdcc.idDebitoParcelaReceita = tcci.idDebitoParcelaReceita
+--        )
 ) filtro ;
+-- order by filtro.nrcredito, filtro.nranocredito, filtro.idTipoDeducaoCredito, filtro.cdControleLeiAto, filtro.dtDeducao;
+

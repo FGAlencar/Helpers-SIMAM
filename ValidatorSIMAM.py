@@ -17,6 +17,11 @@ class ValidatorSIMAM:
         self.dbConfigure = None
         self.queryParams = None
         self.queryParamsKeys = ['days', 'months', 'years', 'interval']
+        self.TOTALS = {
+            'batch':float(0),
+            'arquivo':float(0),
+            'integrado':float(0)
+        }
 
     def __validateDBConfig(self, DBConfig) -> None:
         if DBConfig[self.HOST] is None or DBConfig[self.HOST] is None or DBConfig[self.HOST] is None or DBConfig[self.HOST] is None:
@@ -134,24 +139,36 @@ class ValidatorSIMAM:
     
     def __getFileName(self):
         return f"resultado-{self.dbConfigure['database']}.txt"
+    
+    def __updateTotals(self, batch, arquivo, integrado):
+        self.TOTALS['batch'] = self.TOTALS['batch'] + float(batch)
+        self.TOTALS['arquivo'] = self.TOTALS['arquivo'] + float(arquivo)
+        self.TOTALS['integrado'] = self.TOTALS['integrado'] + float(integrado)
+
 
     def __registerResponse(self, date, batchResponse, conferenciaResponse):
-        fileName = self.__getFileName()
-
-        with open(fileName, 'a') as file:
-            batchValue = self.formatMoney(batchResponse[0][0])
-            arquivoValue = self.formatMoney(conferenciaResponse[0][3])
-            integradoValue = self.formatMoney(conferenciaResponse[0][4])
+        with open(self.__getFileName(), 'a') as file:
+            batchValue = batchResponse[0][0]
+            arquivoValue = conferenciaResponse[0][3]
+            integradoValue = conferenciaResponse[0][4]
             isValuesOk = 'OK' if batchValue == arquivoValue and arquivoValue == integradoValue else 'PROBLEMAS'
-            file.write(f'Data = {date} ; BATCH = {batchValue} ; ARQUIVO = {arquivoValue} ; INTEGRADO = {integradoValue} ; STATUS = {isValuesOk} \n')
+            self.__updateTotals(batchValue, arquivoValue, integradoValue)
+            file.write(f'Data = {date} ; BATCH = {self.formatMoney(batchValue)} ; ARQUIVO = {self.formatMoney(arquivoValue)} ; INTEGRADO = {self.formatMoney(integradoValue)} ; STATUS = {isValuesOk} \n')
 
     def __prepareFile(self):
         try:
             os.remove(self.__getFileName())
         except:
             print("Arquivo inexistente!")
+
     def __closeConnection(self):
         self.connection.close()
+
+    def __registerTotals(self):
+        with open(self.__getFileName(), 'a') as file:
+            totalsLine = '\n \n TOTAIS: '
+            for key in self.TOTALS: totalsLine += f"{key} = {self.formatMoney(self.TOTALS[key])} ;  "
+            file.write(totalsLine)
 
     def execute(self):
         self.__initCursor()
@@ -163,4 +180,5 @@ class ValidatorSIMAM:
                     batchResponse = self.__executeBatchQuery(date)
                     conferenciaResponse = self.__executeConferenciaQuery(date)
                     self.__registerResponse(date, batchResponse, conferenciaResponse)
+        self.__registerTotals()
         self.__closeConnection()
