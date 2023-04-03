@@ -23,6 +23,7 @@ class App:
         self.application.connectDatabase(self.dbConfigure)
         self.application.readQueryParams(self.queryParams)
         self.application.execute()
+        exit()
 
 
 

@@ -141,19 +141,31 @@ class ValidatorSIMAM:
         return f"resultado-{self.dbConfigure['database']}.txt"
     
     def __updateTotals(self, batch, arquivo, integrado):
-        self.TOTALS['batch'] = self.TOTALS['batch'] + float(batch)
-        self.TOTALS['arquivo'] = self.TOTALS['arquivo'] + float(arquivo)
-        self.TOTALS['integrado'] = self.TOTALS['integrado'] + float(integrado)
+        self.TOTALS['batch'] += float(batch)
+        self.TOTALS['arquivo'] += float(arquivo)
+        self.TOTALS['integrado'] += float(integrado)
 
+    def __getFinalStatus(self, batchValue, arquivoValue, integradoValue):
+        status=''
+        
+        if batchValue == arquivoValue and arquivoValue != integradoValue: status = "Verificar valor integrado ou SQL Batch"
+        if batchValue != arquivoValue and arquivoValue == integradoValue: status = "Verificar SQL do batch ou valor integrado"
+        if batchValue != arquivoValue and arquivoValue != integradoValue: status =  " VERIFICAR "
+        if batchValue != arquivoValue and batchValue == integradoValue: status = "Gerar carga novamente"
+        if integradoValue == 0 : status = "Enviar dia para contabilidade"
+        if arquivoValue == 0: status = "Gerar carga"
+        if batchValue == arquivoValue and arquivoValue ==  integradoValue : status = "OK"
+
+        return status
 
     def __registerResponse(self, date, batchResponse, conferenciaResponse):
         with open(self.__getFileName(), 'a') as file:
             batchValue = batchResponse[0][0]
             arquivoValue = conferenciaResponse[0][3]
             integradoValue = conferenciaResponse[0][4]
-            isValuesOk = 'OK' if batchValue == arquivoValue and arquivoValue == integradoValue else 'PROBLEMAS'
+            isValuesOk =  self.__getFinalStatus(batchValue,arquivoValue, integradoValue)
             self.__updateTotals(batchValue, arquivoValue, integradoValue)
-            file.write(f'Data = {date} ; BATCH = {self.formatMoney(batchValue)} ; ARQUIVO = {self.formatMoney(arquivoValue)} ; INTEGRADO = {self.formatMoney(integradoValue)} ; STATUS = {isValuesOk} \n')
+            file.write(f'Data = {date} ; BATCH = {self.formatMoney(batchValue)} ; ARQUIVO = {self.formatMoney(arquivoValue)} ; INTEGRADO = {self.formatMoney(integradoValue)} ; STATUS = {isValuesOk}\n')
 
     def __prepareFile(self):
         try:
